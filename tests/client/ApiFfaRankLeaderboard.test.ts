@@ -11,6 +11,7 @@ vi.mock("../../src/client/Auth", () => ({
 }));
 
 import {
+  fetchFfaGlobalLeaderboard,
   fetchFfaRankLeaderboard,
   fetchFfaRankPosition,
 } from "../../src/client/Api";
@@ -95,5 +96,20 @@ describe("fetchFfaRankLeaderboard", () => {
     vi.mocked(fetch).mockResolvedValue(res({ players: "nope" }) as never);
 
     expect(await fetchFfaRankLeaderboard("diamond", 1)).toBe(false);
+  });
+});
+
+
+describe("global FFA frontend integration", () => {
+  it("requests global pages and rejects pages outside the five-page cap", async () => {
+    vi.mocked(fetch).mockResolvedValue(res({ players: [entry] }) as never);
+    expect(await fetchFfaGlobalLeaderboard(2)).toEqual({
+      players: [expect.objectContaining(entry)],
+    });
+    const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
+    expect(url.pathname).toBe("/leaderboard/ranked/ffa");
+    expect(url.searchParams.get("page")).toBe("2");
+    expect(await fetchFfaGlobalLeaderboard(6)).toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

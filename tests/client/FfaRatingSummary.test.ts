@@ -41,6 +41,7 @@ describe("ffaSummaryFromMe / ffaSummaryFromProfile", () => {
         games: 40,
         wins: 5,
         peak: 1700,
+        globalPosition: 42,
       },
       {
         kind: "rated",
@@ -48,6 +49,7 @@ describe("ffaSummaryFromMe / ffaSummaryFromProfile", () => {
         uncertainty: 84.7,
         tier: "Gold I",
         peak: 1700,
+        globalPosition: 42,
       },
     ],
   ])("reads @me's %j as %j", (ffa, expected) =>
@@ -84,6 +86,7 @@ describe("<ffa-rating-summary>", () => {
       uncertainty: 84.7,
       tier: "Gold I",
       peak: 1700,
+      globalPosition: 42,
     });
     expect(
       el
@@ -99,6 +102,9 @@ describe("<ffa-rating-summary>", () => {
     );
     expect(el.querySelector("[data-ffa-rating-peak]")!.textContent).toContain(
       'ffa_rating.peak:{"rating":"1700"}',
+    );
+    expect(el.querySelector("[data-ffa-global-position]")?.textContent).toContain(
+      "ffa_rating.global_position",
     );
     expect(el.querySelector("ofstats-credit")).not.toBeNull();
   });
@@ -125,6 +131,7 @@ describe("<ffa-rating-summary>", () => {
       el.querySelector<FfaTierBadge>("ffa-tier-badge")!.calibrationGames,
     ).toBe(3);
     expect(el.querySelector("[data-ffa-rating-value]")).toBeNull();
+    expect(el.querySelector("[data-ffa-global-position]")).toBeNull();
     expect(el.querySelector("ofstats-credit")).not.toBeNull();
   });
 

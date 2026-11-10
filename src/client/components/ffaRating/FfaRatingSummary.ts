@@ -22,6 +22,7 @@ export type FfaRatingSummaryData =
       uncertainty: number;
       tier: string;
       peak?: number;
+      globalPosition?: number;
     }
   | { kind: "calibrating"; calibrationGames: number };
 
@@ -45,6 +46,9 @@ export function ffaSummaryFromMe(
       uncertainty: ffa.uncertainty,
       tier: ffa.tier,
       ...(ffa.peak === undefined ? {} : { peak: ffa.peak }),
+      ...(ffa.globalPosition === undefined
+        ? {}
+        : { globalPosition: ffa.globalPosition }),
     };
   }
   if (ffa.calibrationGames !== undefined) {
@@ -104,6 +108,17 @@ export class FfaRatingSummary extends LitElement {
                   rating.uncertainty,
                 )}</span
               >
+              ${
+                rating.globalPosition === undefined
+                  ? nothing
+                  : html`<span
+                      data-ffa-global-position
+                      class="text-xs font-bold tabular-nums text-blue-300"
+                      >${translateText("ffa_rating.global_position", {
+                        position: rating.globalPosition,
+                      })}</span
+                    >`
+              }
               ${
                 rating.peak === undefined
                   ? nothing

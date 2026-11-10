@@ -699,6 +699,8 @@ export const UserMeResponseSchema = z.object({
             games: z.number().int().nonnegative().optional().catch(undefined),
             wins: z.number().int().nonnegative().optional().catch(undefined),
             peak: z.number().optional().catch(undefined),
+            // Global FFA position is absent until the backend provides it.
+            globalPosition: z.number().int().positive().optional().catch(undefined),
             // True when the board's ± rule keeps this rating off the board.
             hiddenByUncertainty: z.boolean().optional().catch(undefined),
             calibrationGames: z

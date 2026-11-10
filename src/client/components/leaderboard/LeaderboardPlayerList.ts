@@ -8,6 +8,7 @@ import { assetUrl } from "@openfront/shared/AssetUrls";
 import { html, LitElement, nothing, PropertyValues, TemplateResult } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import {
+  fetchFfaGlobalLeaderboard,
   fetchFfaRankLeaderboard,
   fetchFfaRankPosition,
   fetchPlayerLeaderboard,
@@ -57,6 +58,11 @@ interface LadderState {
 /** One FFA rank's loaded rows, and the next page to ask for. */
 interface RankLadderState extends LadderState {
   nextPage: number;
+}
+
+/** Convert a page-local row index into its continuous Top 250 position. */
+export function globalFfaPositionForPage(page: number, index: number): number {
+  return (page - 1) * 50 + index + 1;
 }
 
 const emptyRankLadder = (): RankLadderState => ({
@@ -128,18 +134,19 @@ export class LeaderboardPlayerList extends LitElement {
   > | null = null;
 
   // The selected rank tab on the FFA board, and each rank's rows so far.
-  @state() private ffaRank: FfaTierBase | null = null;
+  @state() private ffaRank: FfaTierBase | "all" | null = null;
   @state() private ffaRankLadders: Partial<
-    Record<FfaTierBase, RankLadderState>
+    Record<FfaTierBase | "all", RankLadderState>
   > = {};
-  @state() private ffaRanksLoading: ReadonlySet<FfaTierBase> = new Set();
+  @state() private ffaRanksLoading: ReadonlySet<FfaTierBase | "all"> = new Set();
   // Kept per rank: a rank can fail in the background while another ladder is
   // open, and that ladder must not show its retry.
-  @state() private ffaRanksFailed: ReadonlySet<FfaTierBase> = new Set();
+  @state() private ffaRanksFailed: ReadonlySet<FfaTierBase | "all"> = new Set();
   private ffaOwnRank: FfaTierBase | null = null;
   // The signed-in player's row with their exact position, for when they aren't
   // in the loaded rows of their own rank.
   @state() private ffaPositionRow: LadderRow | null = null;
+  @state() private ffaGlobalPosition: number | null = null;
   // The signed-in player's rated row, the base for ffaPositionRow.
   private ffaOwnRow: LadderRow | null = null;
   // Bumped by a full reload, so an answer from before it is dropped.
@@ -321,6 +328,8 @@ export class LeaderboardPlayerList extends LitElement {
               }
             : null;
         this.ffaOwnRow = null;
+        this.ffaGlobalPosition =
+          ffa?.tier !== undefined ? (ffa.globalPosition ?? null) : null;
         if (
           userMe &&
           ffa?.tier !== undefined &&
@@ -440,7 +449,7 @@ export class LeaderboardPlayerList extends LitElement {
     this.scheduleStickyVisibilityCheck();
   }
 
-  private selectFfaRank(rank: FfaTierBase) {
+  private selectFfaRank(rank: FfaTierBase | "all") {
     if (rank === this.ffaRank) return;
     this.ffaRank = rank;
     this.showStickyUser = false;
@@ -452,7 +461,7 @@ export class LeaderboardPlayerList extends LitElement {
     this.schedulePlayerFillCheck();
   }
 
-  private setFfaRankFailed(rank: FfaTierBase, failed: boolean) {
+  private setFfaRankFailed(rank: FfaTierBase | "all", failed: boolean) {
     const next = new Set(this.ffaRanksFailed);
     if (failed) next.add(rank);
     else next.delete(rank);
@@ -479,7 +488,7 @@ export class LeaderboardPlayerList extends LitElement {
     );
   }
 
-  private async loadFfaRankPage(rank: FfaTierBase) {
+  private async loadFfaRankPage(rank: FfaTierBase | "all") {
     const ladder = this.ffaRankLadders[rank] ?? emptyRankLadder();
     if (!ladder.hasMore || this.ffaRanksLoading.has(rank)) return;
 
@@ -487,7 +496,10 @@ export class LeaderboardPlayerList extends LitElement {
     this.ffaRanksLoading = new Set([...this.ffaRanksLoading, rank]);
     this.setFfaRankFailed(rank, false);
 
-    const result = await fetchFfaRankLeaderboard(rank, ladder.nextPage);
+    const result =
+      rank === "all"
+        ? await fetchFfaGlobalLeaderboard(ladder.nextPage)
+        : await fetchFfaRankLeaderboard(rank, ladder.nextPage);
 
     if (generation !== this.ffaRankGeneration) return;
     const loading = new Set(this.ffaRanksLoading);
@@ -507,7 +519,14 @@ export class LeaderboardPlayerList extends LitElement {
       return;
     }
 
-    const rows = result.players.map(toPlayerEntry);
+    const rows = result.players
+      .slice(0, rank === "all" ? 250 - (ladder.nextPage - 1) * 50 : 50)
+      .map((entry, index) => ({
+        ...toPlayerEntry(entry),
+        ...(rank === "all"
+          ? { rank: globalFfaPositionForPage(ladder.nextPage, index) }
+          : {}),
+      }));
     const existingIds = new Set(ladder.entries.map((row) => row.playerId));
     this.ffaRankLadders = {
       ...this.ffaRankLadders,
@@ -520,7 +539,9 @@ export class LeaderboardPlayerList extends LitElement {
           ladder.userEntry ??
           rows.find((row) => row.playerId === this.currentUserId) ??
           null,
-        hasMore: rows.length >= this.playerPageSize,
+        hasMore:
+          rows.length >= this.playerPageSize &&
+          (rank !== "all" || ladder.nextPage < 5),
         nextPage: ladder.nextPage + 1,
       },
     };
@@ -648,6 +669,19 @@ export class LeaderboardPlayerList extends LitElement {
             >
               ${entry.rank}
             </div>
+            ${
+              this.ffaRank !== "all" &&
+              this.rankedType === RankedType.FreeForAll &&
+              this.ffaGlobalPosition !== null
+                ? html`<span
+                    data-ffa-global-position
+                    class="mt-1 block text-[10px] font-bold text-blue-200"
+                    >${translateText("ffa_rating.global_position", {
+                      position: this.ffaGlobalPosition,
+                    })}</span
+                  >`
+                : nothing
+            }
           </td>
           <td class="py-3 px-4">
             <div class="flex flex-col">
@@ -940,8 +974,29 @@ export class LeaderboardPlayerList extends LitElement {
         <div
           role="tablist"
           aria-label=${translateText("ffa_rating.rank_tabs")}
-          class="grid grid-cols-8 gap-0.5 sm:gap-1"
+          class="grid grid-cols-9 gap-0.5 sm:gap-1"
         >
+          <button
+            type="button"
+            role="tab"
+            data-rank="all"
+            aria-selected=${selected === "all" ? "true" : "false"}
+            tabindex=${selected === "all" ? 0 : -1}
+            aria-label=${translateText("ffa_rating.all_ranks")}
+            title=${translateText("ffa_rating.all_ranks")}
+            class="flex flex-col items-center justify-center gap-1 min-w-0 py-1.5 sm:py-2 rounded-lg border transition-colors ${
+              selected === "all"
+                ? "border-blue-400 bg-blue-500/25 text-white"
+                : "border-white/10 bg-white/5 text-white/50 opacity-70 hover:opacity-100 hover:bg-white/10"
+            }"
+            @click=${() => this.selectFfaRank("all")}
+          >
+            <span class="text-lg font-black">🏆</span>
+            <span
+              class="hidden sm:block w-full truncate text-center text-[10px] font-bold"
+              >${translateText("ffa_rating.all_ranks")}</span
+            >
+          </button>
           ${FFA_TIER_BASES.map((rank) => {
             const name = translateText(FFA_TIER_NAME_KEYS[rank]);
             const active = rank === selected;
@@ -973,9 +1028,17 @@ export class LeaderboardPlayerList extends LitElement {
           })}
         </div>
         <div class="sm:hidden flex items-center gap-2 pt-2 px-1">
-          ${emblem(selected, "w-5 h-5")}
+          ${
+            selected === "all"
+              ? html`<span class="text-lg font-black">🏆</span>`
+              : emblem(selected, "w-5 h-5")
+          }
           <span class="text-sm font-bold uppercase tracking-wider text-white"
-            >${translateText(FFA_TIER_NAME_KEYS[selected])}</span
+            >${translateText(
+              selected === "all"
+                ? "ffa_rating.all_ranks"
+                : FFA_TIER_NAME_KEYS[selected],
+            )}</span
           >
           <span class="ml-auto text-xs text-white/50"
             >${translateText("ffa_rating.rank_top_250")}</span
@@ -1031,11 +1094,13 @@ export class LeaderboardPlayerList extends LitElement {
       }?.[displayRank] ?? "text-white/40 bg-white/5";
 
     const rankIcon =
-      {
-        1: "👑",
-        2: "🥈",
-        3: "🥉",
-      }?.[displayRank] ?? String(displayRank);
+      this.ffaRank === "all"
+        ? String(displayRank)
+        : ({
+            1: "👑",
+            2: "🥈",
+            3: "🥉",
+          }?.[displayRank] ?? String(displayRank));
 
     return html`
       <tr
@@ -1051,6 +1116,20 @@ export class LeaderboardPlayerList extends LitElement {
           >
             ${rankIcon}
           </div>
+          ${
+            isCurrentUser &&
+            this.ffaRank !== "all" &&
+            this.rankedType === RankedType.FreeForAll &&
+            this.ffaGlobalPosition !== null
+              ? html`<span
+                  data-ffa-global-position
+                  class="mt-1 block text-[10px] font-bold text-blue-300"
+                  >${translateText("ffa_rating.global_position", {
+                    position: this.ffaGlobalPosition,
+                  })}</span
+                >`
+              : nothing
+          }
         </td>
         <td class="py-3 px-4">
           <div class="flex items-center gap-2">

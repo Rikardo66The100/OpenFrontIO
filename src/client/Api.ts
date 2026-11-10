@@ -2426,6 +2426,29 @@ export async function fetchFfaRankPosition(): Promise<number | null> {
   }
 }
 
+/**
+ * Globally ordered FFA leaderboard page (50 rows; pages 1-5 only).
+ * Lewis's backend implementation will provide this endpoint.
+ */
+export async function fetchFfaGlobalLeaderboard(
+  page: number,
+): Promise<FfaRankLeaderboardResponse | false> {
+  if (!Number.isInteger(page) || page < 1 || page > 5) return false;
+  try {
+    const url = new URL(`${getApiBase()}/leaderboard/ranked/ffa`);
+    url.searchParams.set("page", String(page));
+    const res = await fetch(url.toString(), {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return false;
+    const parsed = FfaRankLeaderboardResponseSchema.safeParse(await res.json());
+    return parsed.success ? parsed.data : false;
+  } catch (err) {
+    console.warn("fetchFfaGlobalLeaderboard: request failed", err);
+    return false;
+  }
+}
+
 const TRIBE_LEADERBOARD_PAGE_SIZE = 50;
 
 async function fetchTribeLeaderboardPage(

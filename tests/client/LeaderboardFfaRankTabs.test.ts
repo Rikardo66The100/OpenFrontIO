@@ -12,19 +12,24 @@ vi.mock("../../src/client/ProgressionAccount", () => ({
 }));
 vi.mock("../../src/client/Api", () => ({
   fetchPlayerLeaderboard: vi.fn(),
+  fetchFfaGlobalLeaderboard: vi.fn(),
   fetchFfaRankLeaderboard: vi.fn(),
   fetchFfaRankPosition: vi.fn(),
   getUserMe: vi.fn(async () => false),
 }));
 
 import {
+  fetchFfaGlobalLeaderboard,
   fetchFfaRankLeaderboard,
   fetchFfaRankPosition,
   fetchPlayerLeaderboard,
   getUserMe,
 } from "../../src/client/Api";
 import "../../src/client/components/leaderboard/LeaderboardPlayerList";
-import type { LeaderboardPlayerList } from "../../src/client/components/leaderboard/LeaderboardPlayerList";
+import {
+  globalFfaPositionForPage,
+  type LeaderboardPlayerList,
+} from "../../src/client/components/leaderboard/LeaderboardPlayerList";
 
 const row = (rank: number, id: string, tier?: string) => ({
   rank,
@@ -97,9 +102,10 @@ beforeEach(() => {
 });
 
 describe("FFA rank tabs", () => {
-  it("lists the 8 ranks from Iron up to Grandmaster", async () => {
+  it("lists All Ranks followed by the 8 ranks from Iron up to Grandmaster", async () => {
     await open();
     expect(tabs().map((t) => t.dataset.rank)).toEqual([
+      "all",
       "iron",
       "bronze",
       "silver",
@@ -206,7 +212,7 @@ describe("FFA rank tabs", () => {
     } as never);
     tab("grandmaster").click();
     await settle();
-    expect(tabs()).toHaveLength(8);
+    expect(tabs()).toHaveLength(9);
     expect(list.textContent).toContain("ffa_rating.rank_empty");
     expect(list.textContent).not.toContain("leaderboard_modal.no_data_yet");
   });
@@ -497,7 +503,7 @@ describe("FFA rank tabs", () => {
     it("makes only the selected rank a tab stop", async () => {
       await open();
       expect(tabs().map((t) => t.tabIndex)).toEqual([
-        -1, -1, -1, -1, -1, 0, -1, -1,
+        -1, -1, -1, -1, -1, -1, 0, -1, -1,
       ]);
     });
 
@@ -549,5 +555,15 @@ describe("FFA rank tabs", () => {
     finish(players("stale"));
     await settle();
     expect(shownIds()).toEqual(["fresh"]);
+  });
+});
+
+
+describe("global FFA positions", () => {
+  it("numbers rows continuously across 50-player pages and stops at 250", () => {
+    expect(globalFfaPositionForPage(1, 0)).toBe(1);
+    expect(globalFfaPositionForPage(1, 49)).toBe(50);
+    expect(globalFfaPositionForPage(2, 0)).toBe(51);
+    expect(globalFfaPositionForPage(5, 49)).toBe(250);
   });
 });
